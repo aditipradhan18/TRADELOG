@@ -31,8 +31,23 @@ Open `/signup`, create an account (you enter your starting balance there), and y
 - Supabase's built-in email sender is for testing and is rate limited. For real users add your own SMTP provider under **Authentication > SMTP**.
 - Free Supabase projects pause after a quiet week and have no automatic backups. Export CSVs from History regularly.
 - Vercel's free Hobby plan is for personal, non-commercial use.
-- Contract sizes live in `lib/finance.ts` (`INSTRUMENTS`). All P&L math is there too, with tests in `lib/finance.test.ts`.
+- **Profit is typed in by you** (your broker's net figure), so every statistic matches your statement. The form shows an estimate from prices for instruments where that is reliable (gold, silver, USD-quoted and USD-base forex pairs, crypto) and says so when it cannot (GBPJPY, indices). R multiples use the price distance to your stop, so they never depend on lot or contract size. All the maths is in `lib/finance.ts` with tests in `lib/finance.test.ts`.
+- The form warns before saving if the sign of your profit disagrees with the prices, or if it is far too large for your account.
 - The service-role key is never used. Everything runs as the signed-in user under row-level security.
+
+## Push to GitHub
+
+Create an empty repository on github.com (no README), then in this folder:
+
+```bash
+git init -b main
+git add .
+git commit -m "TradeLog"
+git remote add origin https://github.com/YOUR-USER/YOUR-REPO.git
+git push -u origin main
+```
+
+`.gitignore` already keeps `node_modules` and `.env.local` (your Supabase keys) out of the repository. Never commit `.env.local`.
 
 ## Design notes
 

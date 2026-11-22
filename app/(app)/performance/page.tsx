@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useData } from '@/components/DataProvider'
 import { DailyBars, EquityChart } from '@/components/Charts'
 import { Empty, PageHead, Panel, Side, Stat } from '@/components/ui'
+import { Gallery, MiniThumbs } from '@/components/Thumbs'
 import { closedTrades, summarize, type Closed } from '@/lib/finance'
 import { fm, pad, tone } from '@/lib/format'
 
@@ -56,10 +57,11 @@ export default function Performance() {
     return { n: days.length ? days.reduce((a, [, v]) => a + v, 0) / days.length : 0, c: list.filter((x) => new Date(`${x.day}T00:00`).getDay() === i).length }
   })
   const side = (d: 'long' | 'short') => { const v = list.filter((x) => x.t.direction === d); return { v, n: v.reduce((a, x) => a + x.net, 0), w: v.filter((x) => x.net > 0).length } }
+  const shots = [...list].reverse().flatMap((x) => (x.t.trade_images ?? []).map((img) => ({ img, label: `${x.t.instrument} · ${fm(x.net)}` }))).slice(0, 12)
   const top = (rows: Closed[], title: string) => (
     <Panel title={title} pad={false}>
-      {rows.length ? <table className="w-full"><thead><tr><th className="th">Symbol</th><th className="th">Side</th><th className="th">Vol</th><th className="th">P&L</th><th className="th">Closed</th></tr></thead>
-        <tbody>{rows.map((x) => <tr key={x.t.id}><td className="td">{x.t.instrument}</td><td className="td"><Side dir={x.t.direction} /></td><td className="td">{x.t.quantity}</td><td className={`td ${tone(x.net)}`}>{fm(x.net)}</td><td className="td font-sans">{x.day}</td></tr>)}</tbody></table>
+      {rows.length ? <table className="w-full"><thead><tr><th className="th">Symbol</th><th className="th">Side</th><th className="th">Vol</th><th className="th">P&L</th><th className="th">Closed</th><th className="th">Charts</th></tr></thead>
+        <tbody>{rows.map((x) => <tr key={x.t.id}><td className="td">{x.t.instrument}</td><td className="td"><Side dir={x.t.direction} /></td><td className="td">{x.t.quantity}</td><td className={`td ${tone(x.net)}`}>{fm(x.net)}</td><td className="td font-sans">{x.day}</td><td className="td"><MiniThumbs images={x.t.trade_images ?? []} /></td></tr>)}</tbody></table>
         : <Empty title="No trades" text="Nothing closed in this period." />}
     </Panel>
   )
@@ -85,7 +87,7 @@ export default function Performance() {
         <Stat label="Recovery factor" value={s.recovery.toFixed(2)} sub="net P&L / max DD" />
         <Stat label="Best trade" value={fm(s.best)} n={s.best} />
         <Stat label="Worst trade" value={fm(s.worst)} n={s.worst} />
-        <Stat label="Trades" value={s.count} sub={`${s.wins}W · ${s.losses}L`} />
+        <Stat label="Trades" value={s.count} sub={`${s.wins}W · ${s.losses}L${s.breakEven ? ` · ${s.breakEven}BE` : ''}`} />
       </div>
       <Panel title="Equity curve" right="Cumulative P&L">{s.count ? <EquityChart curve={s.curve} /> : <Empty title="No closed trades" text="Nothing closed in this period." />}</Panel>
 
@@ -97,14 +99,14 @@ export default function Performance() {
             <button aria-label="Next month" onClick={() => setMonth(new Date(y, mo + 1, 1))} className="text-mute hover:text-ink"><ChevronRight size={18} /></button>
             <span className="ml-auto text-[13px] text-mute">{monthDays.length} active day{monthDays.length === 1 ? '' : 's'}</span>
           </header>
-          <div className="grid grid-cols-7 gap-1.5 p-4 text-[13px]">
+          <div className="grid grid-cols-7 gap-1 p-2 text-[13px] sm:gap-1.5 sm:p-4">
             {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => <div key={d} className="py-1 text-center text-mute">{d}</div>)}
             {Array.from({ length: first }, (_, i) => <div key={`b${i}`} />)}
             {Array.from({ length: dim }, (_, i) => {
               const d = dm[key(i + 1)]
               return (
-                <div key={i} className={`relative min-h-[76px] rounded-md p-2 ${d ? (d.n > 0 ? 'bg-profit/30 text-ink' : d.n < 0 ? 'bg-[#8f3f3a] text-ink' : 'bg-el') : 'bg-el text-mute'} ${key(i + 1) === today ? 'ring-1 ring-accent' : ''}`}>
-                  {i + 1}{d && <><span className="absolute right-2 top-2 text-xs">{d.c}t</span><b className="absolute bottom-2 left-2 font-mono text-[13px]">{fm(Math.round(d.n * 100) / 100)}</b></>}
+                <div key={i} className={`relative min-h-[56px] rounded-md p-1 sm:min-h-[76px] sm:p-2 ${d ? (d.n > 0 ? 'bg-profit/30 text-ink' : d.n < 0 ? 'bg-[#8f3f3a] text-ink' : 'bg-el') : 'bg-el text-mute'} ${key(i + 1) === today ? 'ring-1 ring-accent' : ''}`}>
+                  {i + 1}{d && <><span className="absolute right-1 top-1 text-[9px] sm:right-2 sm:top-2 sm:text-xs">{d.c}t</span><b className="absolute bottom-1 left-1 font-mono text-[9px] sm:bottom-2 sm:left-2 sm:text-[13px]">{fm(Math.round(d.n * 100) / 100)}</b></>}
                 </div>
               )
             })}
@@ -137,8 +139,8 @@ export default function Performance() {
           <div className="space-y-2.5 p-5">{bySymbol.length ? bySymbol.map((x) => (
             <div key={x.k} className="grid grid-cols-[96px_1fr_84px_28px] items-center gap-2.5 text-[13px]"><span className="font-mono">{x.k}</span><div className="h-7 rounded bg-el"><div className={`h-full rounded ${x.n >= 0 ? 'bg-profit' : 'bg-loss'}`} style={{ width: `${(Math.abs(x.n) / maxSym) * 100}%` }} /></div><span className={`text-right font-mono ${tone(x.n)}`}>{fm(Math.round(x.n * 100) / 100)}</span><span className="text-mute">{x.c}t</span></div>)) : <Empty title="No data" text="Nothing closed in this period." />}</div></section>
         <section className="card overflow-hidden"><header className="flex border-b border-line px-5 py-3.5"><h2 className="text-[15px] font-semibold">Day of week</h2><span className="ml-auto text-[13px] text-mute">avg P&L per close-day</span></header>
-          <div className="grid grid-cols-7 gap-2 p-4">{dow.map((d, i) => (
-            <div key={i} className={`rounded-md py-3 text-center text-xs ${d.c ? (d.n > 0 ? 'bg-profit text-bg' : d.n < 0 ? 'bg-loss text-ink' : 'bg-el') : 'bg-el text-mute'}`}><div>{DOW[i]}</div><b className="my-1 block font-mono">{d.c ? fm(Math.round(d.n * 100) / 100) : '–'}</b>{d.c}t</div>))}</div></section>
+          <div className="grid grid-cols-7 gap-1 p-2 sm:gap-2 sm:p-4">{dow.map((d, i) => (
+            <div key={i} className={`rounded-md py-3 text-center text-xs ${d.c ? (d.n > 0 ? 'bg-profit text-bg' : d.n < 0 ? 'bg-loss text-ink' : 'bg-el') : 'bg-el text-mute'}`}><div>{DOW[i]}</div><b className="my-1 block font-mono text-[9px] sm:text-xs">{d.c ? fm(Math.round(d.n * 100) / 100) : '–'}</b>{d.c}t</div>))}</div></section>
       </div>
 
       <Panel title="Long vs short">
@@ -148,6 +150,7 @@ export default function Performance() {
             <div className="flex justify-between text-[13px] text-mute"><span>{x.v.length} trades · {list.length ? Math.round((x.v.length / list.length) * 100) : 0}%</span><span>Win rate {x.v.length ? ((x.w / x.v.length) * 100).toFixed(1) : '0.0'}%</span></div></div>) })}</div>
       </Panel>
       <div className="grid gap-4 lg:grid-cols-2">{top([...list].sort((a, b) => b.net - a.net).slice(0, 5), 'Top 5 winners')}{top([...list].sort((a, b) => a.net - b.net).slice(0, 5), 'Top 5 losers')}</div>
+      <Panel title="Trade screenshots" right="Latest from this period">{shots.length ? <Gallery items={shots} /> : <Empty title="No screenshots" text="Attach images to your trades and they appear here." />}</Panel>
     </>
   )
 }

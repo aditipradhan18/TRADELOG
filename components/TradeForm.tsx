@@ -3,12 +3,12 @@ import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { useData } from './DataProvider'
 import { Thumbs } from './Thumbs'
-import { INSTRUMENTS, MISTAKES, SESSIONS, netPnl, plannedRR, type Direction, type Trade } from '@/lib/finance'
-import { fm, toLocalInput } from '@/lib/format'
+import { INSTRUMENTS, MISTAKES, SESSIONS, estimateProfit, netPnl, plannedRR, type Direction, type Trade } from '@/lib/finance'
+import { fm, toLocalInput, tone } from '@/lib/format'
 
-type Form = Record<'instrument' | 'direction' | 'status' | 'entry_at' | 'exit_at' | 'entry_price' | 'exit_price' | 'quantity' | 'contract_size' | 'stop_loss' | 'target_price' | 'session' | 'mistake' | 'reason', string>
+type Form = Record<'instrument' | 'direction' | 'status' | 'entry_at' | 'exit_at' | 'entry_price' | 'exit_price' | 'quantity' | 'profit' | 'stop_loss' | 'target_price' | 'session' | 'mistake' | 'reason', string>
 
-const blank: Form = { instrument: 'XAUUSD', direction: 'long', status: 'closed', entry_at: '', exit_at: '', entry_price: '', exit_price: '', quantity: '', contract_size: '100', stop_loss: '', target_price: '', session: 'London', mistake: 'None', reason: '' }
+const blank: Form = { instrument: 'XAUUSD', direction: 'long', status: 'closed', entry_at: '', exit_at: '', entry_price: '', exit_price: '', quantity: '', profit: '', stop_loss: '', target_price: '', session: 'London', mistake: 'None', reason: '' }
 const CATS = ['Before trade', 'Entry', 'Exit', 'Post-trade', 'Other']
 const n = (v: string) => (v.trim() === '' ? null : Number(v))
 
@@ -25,14 +25,13 @@ const schema = z.object({
   entry_at: z.string().min(1, 'Entry time is required'),
   entry_price: z.number({ invalid_type_error: 'Entry price is required' }).positive('Entry price must be above 0'),
   quantity: z.number({ invalid_type_error: 'Lots are required' }).positive('Lots must be above 0'),
-  contract_size: z.number({ invalid_type_error: 'Contract size is required' }).positive('Contract size must be above 0'),
 })
 
 export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: () => void }) {
   const { sb, profile, reload } = useData()
   const [f, setF] = useState<Form>(trade ? {
     instrument: trade.instrument, direction: trade.direction, status: trade.status, entry_at: toLocalInput(trade.entry_at), exit_at: toLocalInput(trade.exit_at),
-    entry_price: String(trade.entry_price), exit_price: trade.exit_price == null ? '' : String(trade.exit_price), quantity: String(trade.quantity), contract_size: String(trade.contract_size),
+    entry_price: String(trade.entry_price), exit_price: trade.exit_price == null ? '' : String(trade.exit_price), quantity: String(trade.quantity), profit: trade.profit == null ? '' : String(trade.profit),
     stop_loss: trade.stop_loss == null ? '' : String(trade.stop_loss), target_price: trade.target_price == null ? '' : String(trade.target_price),
     session: trade.session ?? 'London', mistake: trade.mistake, reason: trade.reason ?? '',
   } : blank)
@@ -44,6 +43,7 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
   const [warn, setWarn] = useState('')
   const set = (k: keyof Form, v: string) => setF((p) => ({ ...p, [k]: v }))
   const ins = INSTRUMENTS.find((i) => i.symbol === f.instrument)
+  const est = f.status === 'closed' ? estimateProfit(f.instrument, f.direction as Direction, n(f.entry_price), n(f.exit_price), n(f.quantity)) : null
   const existing = (trade?.trade_images ?? []).filter((i) => !removed.includes(i.id))
 
   const rr = useMemo(() => {
@@ -53,18 +53,25 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
 
   async function save(force = false) {
     setErr('')
-    const parsed = schema.safeParse({ entry_at: f.entry_at, entry_price: n(f.entry_price) ?? undefined, quantity: n(f.quantity) ?? undefined, contract_size: n(f.contract_size) ?? undefined })
+    const parsed = schema.safeParse({ entry_at: f.entry_at, entry_price: n(f.entry_price) ?? undefined, quantity: n(f.quantity) ?? undefined })
     if (!parsed.success) return setErr(parsed.error.issues[0].message)
     if (f.status === 'closed' && n(f.exit_price) == null) return setErr('Closed trades need an exit price.')
+    if (f.status === 'closed' && n(f.profit) == null) return setErr('Enter your profit (use a minus sign for a loss).')
     const payload = {
       instrument: f.instrument, market: ins?.market ?? 'Other', direction: f.direction, status: f.status,
       entry_at: new Date(f.entry_at).toISOString(), exit_at: f.status === 'closed' ? new Date(f.exit_at || f.entry_at).toISOString() : null,
-      entry_price: parsed.data.entry_price, exit_price: f.status === 'closed' ? n(f.exit_price) : null, quantity: parsed.data.quantity, contract_size: parsed.data.contract_size,
+      entry_price: parsed.data.entry_price, exit_price: f.status === 'closed' ? n(f.exit_price) : null, quantity: parsed.data.quantity, profit: f.status === 'closed' ? n(f.profit) : null,
       stop_loss: n(f.stop_loss), target_price: n(f.target_price), session: f.session, mistake: f.mistake, reason: f.reason.trim() || null,
     }
     const pnl = netPnl({ ...payload, id: '', trade_images: [] } as Trade)
-    if (!force && pnl != null && Math.abs(pnl) > Math.max((profile?.starting_balance ?? 0) * 10, 100000)) {
-      return setWarn(`This trade shows a P&L of ${fm(pnl)}, far too large for your account. Check the prices, lots and contract size.`)
+    if (!force && pnl != null) {
+      const mv = ((payload.exit_price ?? 0) - payload.entry_price) * (payload.direction === 'long' ? 1 : -1)
+      if (pnl !== 0 && mv !== 0 && Math.sign(pnl) !== Math.sign(mv)) {
+        return setWarn(`Your profit is ${fm(pnl)}, but the exit is ${mv > 0 ? 'better' : 'worse'} than the entry for a ${payload.direction === 'long' ? 'Buy' : 'Sell'}. Check the profit sign, prices and direction.`)
+      }
+      if (Math.abs(pnl) > Math.max((profile?.starting_balance ?? 0) * 10, 100000)) {
+        return setWarn(`This trade shows a P&L of ${fm(pnl)}, far too large for your account. Check the profit you entered.`)
+      }
     }
     setBusy(true); setWarn('')
     try {
@@ -107,7 +114,7 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
           {sec('Setup')}
           <div>
             <label className="label" htmlFor="instrument">Instrument</label>
-            <select id="instrument" value={f.instrument} className="input" onChange={(e) => { set('instrument', e.target.value); const i = INSTRUMENTS.find((x) => x.symbol === e.target.value); if (i) set('contract_size', String(i.size)) }}>
+            <select id="instrument" value={f.instrument} className="input" onChange={(e) => set('instrument', e.target.value)}>
               {['Metals', 'Forex', 'Crypto', 'Indices'].map((m) => <optgroup key={m} label={m}>{INSTRUMENTS.filter((i) => i.market === m).map((i) => <option key={i.symbol} value={i.symbol}>{i.label}</option>)}</optgroup>)}
             </select>
           </div>
@@ -119,7 +126,16 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
           {field('Entry price', 'entry_price', 'number', { step: 'any' })}
           {f.status === 'closed' && field('Exit price', 'exit_price', 'number', { step: 'any' })}
           {field('Lots / quantity', 'quantity', 'number', { step: 'any' })}
-          {field('Contract size (units per lot)', 'contract_size', 'number', { step: 'any' })}
+          {f.status === 'closed' && (
+            <div>
+              <label className="label" htmlFor="profit">Profit ($)</label>
+              <input id="profit" type="number" step="any" value={f.profit} onChange={(e) => set('profit', e.target.value)} placeholder="Net result, minus for a loss" className="input font-mono" />
+              <p className="mt-1.5 min-h-[18px] text-xs text-mute">
+                {est != null ? <>Estimate from prices: <b className={tone(est)}>{fm(est)}</b> <button type="button" className="text-accent2 underline" onClick={() => set('profit', String(est))}>Use</button> (before swaps and commission)</>
+                  : ins && ins.quote === 'none' && n(f.exit_price) ? 'No automatic estimate for this instrument. Enter the profit from your broker.' : ''}
+              </p>
+            </div>
+          )}
           {field('Stop loss', 'stop_loss', 'number', { step: 'any' })}
           {field('Target', 'target_price', 'number', { step: 'any' })}
           {sec('Context')}

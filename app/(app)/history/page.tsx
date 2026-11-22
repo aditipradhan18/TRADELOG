@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Download } from 'lucide-react'
 import { useData } from '@/components/DataProvider'
 import { Empty, PageHead, Side } from '@/components/ui'
+import { MiniThumbs } from '@/components/Thumbs'
 import { closedTrades, exitHit, type Closed } from '@/lib/finance'
 import { fm, pad, tone } from '@/lib/format'
 
@@ -42,9 +43,9 @@ export default function HistoryPage() {
   type Row = (string | number | JSX.Element)[]
   let head: string[] = [], data: { key: string; cells: Row; cls?: string[] }[] = []
   if (tab === 'closed') {
-    head = ['Open time', 'Close time', 'Symbol', 'Side', 'Volume', 'Open price', 'SL', 'TP', 'Close price', 'Profit']
+    head = ['Open time', 'Close time', 'Symbol', 'Side', 'Volume', 'Open price', 'SL', 'TP', 'Close price', 'Profit', 'Charts']
     data = rows.map((x: Closed) => { const h = exitHit(x.t); return { key: x.t.id, cells: [dt(x.t.entry_at), dt(x.t.exit_at ?? x.t.entry_at), x.t.instrument, <Side key="s" dir={x.t.direction} />, x.t.quantity, x.t.entry_price, x.t.stop_loss ?? '—', x.t.target_price ?? '—',
-      <span key="c">{h && <span className={`mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold ${h === 'SL' ? 'bg-loss/20 text-loss' : 'bg-profit/20 text-profit'}`}>{h}</span>}{x.t.exit_price}</span>, <b key="p" className={`font-semibold ${tone(x.net)}`}>{x.net.toFixed(2)}</b>],
+      <span key="c">{h && <span className={`mr-2 rounded px-1.5 py-0.5 text-[10px] font-bold ${h === 'SL' ? 'bg-loss/20 text-loss' : 'bg-profit/20 text-profit'}`}>{h}</span>}{x.t.exit_price}</span>, <b key="p" className={`font-semibold ${tone(x.net)}`}>{x.net.toFixed(2)}</b>, <MiniThumbs key="m" images={x.t.trade_images ?? []} />],
       cls: ['', '', '', '', '', '', h === 'SL' ? 'bg-loss/10 text-loss' : '', h === 'TP' ? 'bg-profit/10 text-profit' : '', '', ''] } })
   } else if (tab === 'deals') {
     head = ['Time', 'Symbol', 'Direction', 'Type', 'Volume', 'Price', 'Profit']

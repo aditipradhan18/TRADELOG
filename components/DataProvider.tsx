@@ -27,7 +27,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     else {
       setError('')
       setTrades((t.data ?? []).map((r) => ({
-        ...r, entry_price: Number(r.entry_price), exit_price: num(r.exit_price), quantity: Number(r.quantity), contract_size: Number(r.contract_size),
+        ...r, entry_price: Number(r.entry_price), exit_price: num(r.exit_price), quantity: Number(r.quantity), profit: num(r.profit),
         stop_loss: num(r.stop_loss), target_price: num(r.target_price),
       })) as Trade[])
       setProfile({ ...p.data, starting_balance: Number(p.data.starting_balance) })

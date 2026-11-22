@@ -21,7 +21,7 @@ export default function Dashboard() {
       <div className="mb-4 grid grid-cols-2 gap-3.5 lg:grid-cols-6">
         <Stat label="Balance" value={fm(s.balance)} sub={`Start ${fm(profile?.starting_balance ?? 0)}`} />
         <Stat label="Net P&L" value={fm(s.net)} n={s.net} sub={`${s.count} closed trades`} />
-        <Stat label="Win rate" value={`${s.winRate.toFixed(1)}%`} sub={`${s.wins}W · ${s.losses}L`} bar={s.winRate} />
+        <Stat label="Win rate" value={`${s.winRate.toFixed(1)}%`} sub={`${s.wins}W · ${s.losses}L${s.breakEven ? ` · ${s.breakEven}BE` : ''}`} bar={s.winRate} />
         <Stat label="Profit factor" value={s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2)} sub="Gross wins / losses" />
         <Stat label="Avg R" value={s.avgR == null ? '—' : `${s.avgR.toFixed(2)}R`} n={s.avgR ?? 0} sub={`${s.rCount} trades with SL`} />
         <Stat label="Open trades" value={open} sub="Not in realized P&L" />

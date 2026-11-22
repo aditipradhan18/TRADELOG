@@ -24,7 +24,7 @@ create table public.trades (
   entry_price numeric(20,8) not null,
   exit_price numeric(20,8),
   quantity numeric(20,8) not null check (quantity > 0),
-  contract_size numeric(20,8) not null check (contract_size > 0),
+  profit numeric(20,2),   -- net result typed from the broker; null for open trades
   stop_loss numeric(20,8),
   target_price numeric(20,8),
   session text check (session in ('Sydney','Asia','London','New York')),
@@ -32,7 +32,7 @@ create table public.trades (
   mistake text not null default 'None',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint closed_needs_exit check (status <> 'closed' or (exit_price is not null and exit_at is not null))
+  constraint closed_needs_exit check (status <> 'closed' or (exit_price is not null and exit_at is not null and profit is not null))
 );
 create index trades_user_exit_idx on public.trades (user_id, exit_at desc);
 

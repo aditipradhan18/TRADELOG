@@ -13,7 +13,7 @@ export interface Trade {
   entry_price: number
   exit_price: number | null
   quantity: number
-  contract_size: number
+  profit: number | null
   stop_loss: number | null
   target_price: number | null
   session: string | null
@@ -22,17 +22,17 @@ export interface Trade {
   trade_images?: TradeImage[]
 }
 
+/** quote: 'usd' = profit of one price move is already in USD, 'base' = USD is the base currency (divide by the exit price), 'none' = depends on the broker, so no estimate. */
+type Quote = 'usd' | 'base' | 'none'
+const ins = (symbol: string, label: string, market: string, size: number, quote: Quote) => ({ symbol, label, market, size, quote })
 export const INSTRUMENTS = [
-  { symbol: 'XAUUSD', label: 'Gold (XAUUSD)', market: 'Metals', size: 100 },
-  { symbol: 'XAGUSD', label: 'Silver (XAGUSD)', market: 'Metals', size: 5000 },
-  ...['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD', 'GBPJPY'].map((s) => ({ symbol: s, label: s, market: 'Forex', size: 100000 })),
-  { symbol: 'BTCUSD', label: 'Bitcoin (BTCUSD)', market: 'Crypto', size: 1 },
-  { symbol: 'ETHUSD', label: 'Ethereum (ETHUSD)', market: 'Crypto', size: 1 },
-  { symbol: 'SOLUSD', label: 'Solana (SOLUSD)', market: 'Crypto', size: 1 },
-  { symbol: 'XRPUSD', label: 'XRPUSD', market: 'Crypto', size: 1 },
-  { symbol: 'NAS100', label: 'Nasdaq 100 (NAS100)', market: 'Indices', size: 1 },
-  { symbol: 'US30', label: 'Dow Jones (US30)', market: 'Indices', size: 1 },
-  { symbol: 'SPX500', label: 'S&P 500 (SPX500)', market: 'Indices', size: 1 },
+  ins('XAUUSD', 'Gold (XAUUSD)', 'Metals', 100, 'usd'),
+  ins('XAGUSD', 'Silver (XAGUSD)', 'Metals', 5000, 'usd'),
+  ins('EURUSD', 'EURUSD', 'Forex', 100000, 'usd'), ins('GBPUSD', 'GBPUSD', 'Forex', 100000, 'usd'), ins('USDJPY', 'USDJPY', 'Forex', 100000, 'base'),
+  ins('AUDUSD', 'AUDUSD', 'Forex', 100000, 'usd'), ins('USDCAD', 'USDCAD', 'Forex', 100000, 'base'), ins('USDCHF', 'USDCHF', 'Forex', 100000, 'base'),
+  ins('NZDUSD', 'NZDUSD', 'Forex', 100000, 'usd'), ins('GBPJPY', 'GBPJPY', 'Forex', 100000, 'none'),
+  ins('BTCUSD', 'Bitcoin (BTCUSD)', 'Crypto', 1, 'usd'), ins('ETHUSD', 'Ethereum (ETHUSD)', 'Crypto', 1, 'usd'), ins('SOLUSD', 'Solana (SOLUSD)', 'Crypto', 1, 'usd'), ins('XRPUSD', 'XRPUSD', 'Crypto', 1, 'usd'),
+  ins('NAS100', 'Nasdaq 100 (NAS100)', 'Indices', 1, 'none'), ins('US30', 'Dow Jones (US30)', 'Indices', 1, 'none'), ins('SPX500', 'S&P 500 (SPX500)', 'Indices', 1, 'none'),
 ]
 export const SESSIONS = ['Sydney', 'Asia', 'London', 'New York']
 export const MISTAKES = ['None', 'Overtrading', 'Revenge trading', 'No stop loss', 'FOMO entries', 'Poor risk management', 'Early exits / late exits', 'No proper strategy']
@@ -40,18 +40,25 @@ export const MISTAKES = ['None', 'Overtrading', 'Revenge trading', 'No stop loss
 const d = (n: number) => new Decimal(n)
 const side = (t: Trade) => (t.direction === 'long' ? 1 : -1)
 
-/** Net P&L of a closed trade in account currency (no fees in this version). Open trades return null. */
+/** Net P&L is the profit you typed (the broker's figure). Open trades return null. */
 export function netPnl(t: Trade): number | null {
-  if (t.status !== 'closed' || t.exit_price == null) return null
-  return d(t.exit_price).minus(t.entry_price).times(side(t)).times(t.quantity).times(t.contract_size).toDecimalPlaces(2).toNumber()
+  if (t.status !== 'closed' || t.exit_price == null || t.profit == null) return null
+  return d(t.profit).toDecimalPlaces(2).toNumber()
 }
 
-/** Realized result divided by the amount risked at the stop loss. */
+/** Realized R = price move in your favour divided by the distance to the stop. Independent of lot size, contract size and currency. */
 export function realizedR(t: Trade): number | null {
-  const n = netPnl(t)
-  if (n == null || t.stop_loss == null) return null
-  const risk = d(t.entry_price).minus(t.stop_loss).abs().times(t.quantity).times(t.contract_size)
-  return risk.isZero() ? null : d(n).div(risk).toNumber()
+  if (netPnl(t) == null || t.stop_loss == null || t.exit_price == null) return null
+  const dist = Math.abs(t.entry_price - t.stop_loss)
+  return dist ? d(t.exit_price).minus(t.entry_price).times(side(t)).div(dist).toNumber() : null
+}
+
+/** Helper for the form: what the profit should roughly be from prices alone (before swaps and commission). Null where it depends on the broker. */
+export function estimateProfit(symbol: string, dir: Direction, entry: number | null, exit: number | null, lots: number | null): number | null {
+  const i = INSTRUMENTS.find((x) => x.symbol === symbol)
+  if (!i || i.quote === 'none' || !entry || !exit || !lots || entry <= 0 || exit <= 0 || lots <= 0) return null
+  const raw = d(exit).minus(entry).times(dir === 'long' ? 1 : -1).times(lots).times(i.size)
+  return (i.quote === 'base' ? raw.div(exit) : raw).toDecimalPlaces(2).toNumber()
 }
 
 /** Planned reward-to-risk from stop and target. Null if either is missing or on the wrong side of entry. */
@@ -108,7 +115,7 @@ export function summarize(list: Closed[], startingBalance: number) {
   const withR = list.filter((x) => x.r != null)
 
   return {
-    count: list.length, wins: wins.length, losses: losses.length, net, curve, daily,
+    count: list.length, wins: wins.length, losses: losses.length, breakEven: list.length - wins.length - losses.length, net, curve, daily,
     gross: list.reduce((a, x) => a + x.net, 0),
     winRate: list.length ? (wins.length / list.length) * 100 : 0,
     profitFactor: grossLoss ? grossWin / Math.abs(grossLoss) : grossWin ? Infinity : 0,
