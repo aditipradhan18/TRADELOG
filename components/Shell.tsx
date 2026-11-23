@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { BarChart3, BookOpen, History, LayoutDashboard, LogOut, Settings } from 'lucide-react'
@@ -18,13 +19,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const router = useRouter()
   const { trades, profile, sb, loading, error } = useData()
+  const [signingOut, setSigningOut] = useState(false)
   const closed = closedTrades(trades)
   const s = summarize(closed, profile?.starting_balance ?? 0)
   const today = new Date().toLocaleDateString('en-CA')
   const todayNet = closed.filter((x) => x.day === today).reduce((a, x) => a + x.net, 0)
   const initials = (profile?.display_name ?? '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 
-  async function signOut() { await sb.auth.signOut(); router.replace('/login'); router.refresh() }
+  async function signOut() {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await sb.auth.signOut({ scope: 'local' })
+    } finally {
+      router.replace('/login')
+    }
+  }
 
   return (
     <div className="min-h-screen pb-24 md:pb-0">
@@ -46,7 +56,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <span className="hidden sm:block">Today <b className={`font-mono font-medium ${tone(todayNet) || 'text-ink'}`}>{fm(todayNet)}</b></span>
           <span className="hidden sm:block">Balance <b className="font-mono font-medium text-ink">{fm(s.balance)}</b></span>
           <Link href="/settings" title="Settings" className="grid h-8 w-8 place-items-center rounded border border-line bg-el text-xs font-semibold text-ink">{initials}</Link>
-          <button onClick={signOut} title="Sign out" aria-label="Sign out" className="hidden text-mute transition hover:text-ink sm:block"><LogOut size={17} /></button>
+          <button onClick={signOut} disabled={signingOut} title="Sign out" aria-label="Sign out" className="hidden text-mute transition hover:text-ink disabled:opacity-50 sm:block"><LogOut size={17} /></button>
         </div>
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-6 md:px-6">

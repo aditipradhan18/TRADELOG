@@ -1,7 +1,7 @@
 'use client'
 import { FormEvent, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type Mode = 'login' | 'signup' | 'forgot' | 'reset'
@@ -13,7 +13,6 @@ const COPY: Record<Mode, { title: string; sub: string; cta: string }> = {
 }
 
 export default function AuthForm({ mode }: { mode: Mode }) {
-  const router = useRouter()
   const params = useSearchParams()
   const sb = useMemo(() => createClient(), [])
   const [busy, setBusy] = useState(false)
@@ -23,6 +22,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (busy) return
     setErr(''); setOk(''); setBusy(true)
     const f = new FormData(e.currentTarget)
     const email = String(f.get('email') ?? '').trim()
@@ -31,7 +31,8 @@ export default function AuthForm({ mode }: { mode: Mode }) {
       if (mode === 'login') {
         const { error } = await sb.auth.signInWithPassword({ email, password })
         if (error) throw error
-        router.replace('/dashboard'); router.refresh()
+        window.location.replace('/dashboard')
+        return
       } else if (mode === 'signup') {
         const balance = Number(f.get('balance'))
         if (f.get('balance') === '' || !(balance >= 0)) throw new Error('Enter your starting account balance (0 or more).')
@@ -41,8 +42,11 @@ export default function AuthForm({ mode }: { mode: Mode }) {
           options: { emailRedirectTo: `${location.origin}/auth/callback`, data: { display_name: String(f.get('name') ?? '').trim(), starting_balance: balance } },
         })
         if (error) throw error
-        if (data.session) { router.replace('/dashboard'); router.refresh() }
-        else setOk('Check your inbox and confirm your email to finish creating your account.')
+        if (data.session) {
+          window.location.replace('/dashboard')
+          return
+        }
+        setOk('Check your inbox and confirm your email to finish creating your account.')
       } else if (mode === 'forgot') {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/auth/callback?next=/reset-password` })
         if (error) throw error
@@ -51,11 +55,14 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         if (password.length < 8) throw new Error('Password must be at least 8 characters.')
         const { error } = await sb.auth.updateUser({ password })
         if (error) throw error
-        router.replace('/dashboard'); router.refresh()
+        window.location.replace('/dashboard')
+        return
       }
+      setBusy(false)
     } catch (x) {
       setErr(x instanceof Error ? x.message : 'Something went wrong. Please try again.')
-    } finally { setBusy(false) }
+      setBusy(false)
+    }
   }
 
   return (

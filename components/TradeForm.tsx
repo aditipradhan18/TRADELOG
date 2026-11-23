@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import { useData } from './DataProvider'
 import { Thumbs } from './Thumbs'
@@ -41,10 +41,22 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [warn, setWarn] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const set = (k: keyof Form, v: string) => setF((p) => ({ ...p, [k]: v }))
   const ins = INSTRUMENTS.find((i) => i.symbol === f.instrument)
   const est = f.status === 'closed' ? estimateProfit(f.instrument, f.direction as Direction, n(f.entry_price), n(f.exit_price), n(f.quantity)) : null
   const existing = (trade?.trade_images ?? []).filter((i) => !removed.includes(i.id))
+
+  const previews = useMemo(
+    () => files.map((x) => ({ ...x, url: URL.createObjectURL(x.file) })),
+    [files]
+  )
+
+  useEffect(() => {
+    return () => {
+      previews.forEach((p) => URL.revokeObjectURL(p.url))
+    }
+  }, [previews])
 
   const rr = useMemo(() => {
     const e = n(f.entry_price)
@@ -147,10 +159,44 @@ export default function TradeForm({ trade, onClose }: { trade?: Trade; onClose: 
           {sec('Screenshots')}
           <div className="col-span-full space-y-3">
             <Thumbs images={existing} onRemove={(id) => setRemoved((r) => [...r, id])} />
-            {files.length > 0 && <ul className="space-y-1 text-sm text-mute">{files.map((x, i) => <li key={i} className="flex items-center justify-between rounded-lg border border-line px-3 py-1.5"><span className="truncate">{x.file.name} · {x.cat}</span><button type="button" className="text-xs hover:text-ink" onClick={() => setFiles((p) => p.filter((_, j) => j !== i))}>Remove</button></li>)}</ul>}
+            {previews.length > 0 && (
+              <ul className="space-y-1.5 text-sm text-mute">
+                {previews.map((x, i) => (
+                  <li key={`${x.file.name}-${x.file.lastModified}-${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-1.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <img src={x.url} alt={x.file.name} className="h-9 w-12 shrink-0 rounded object-cover" />
+                      <span className="truncate">{x.file.name} · {x.cat}</span>
+                    </div>
+                    <button type="button" className="shrink-0 text-xs hover:text-ink" onClick={() => setFiles((p) => p.filter((_, j) => j !== i))}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex flex-wrap items-center gap-2">
-              <select value={cat} onChange={(e) => setCat(e.target.value)} className="input w-auto">{CATS.map((c) => <option key={c}>{c}</option>)}</select>
-              <label className="btn cursor-pointer">+ Attach images<input type="file" accept="image/*" multiple hidden onChange={(e) => { setFiles((p) => [...p, ...Array.from(e.target.files ?? []).map((file) => ({ file, cat }))]); e.target.value = '' }} /></label>
+              <select value={cat} onChange={(e) => setCat(e.target.value)} className="input w-auto">
+                {CATS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+              <label className="btn cursor-pointer">
+                + Attach images
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files ?? [])
+                    if (picked.length > 0) {
+                      setFiles((p) => [...p, ...picked.map((file) => ({ file, cat }))])
+                    }
+                    requestAnimationFrame(() => {
+                      if (fileInputRef.current) fileInputRef.current.value = ''
+                    })
+                  }}
+                />
+              </label>
             </div>
           </div>
         </div>
